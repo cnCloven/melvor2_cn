@@ -15,6 +15,8 @@
 
 不改 `GamesByMalcs.Melvor2.dll`。不要对 Steam 使用「验证游戏文件完整性」，那会还原 `Melvor2.exe`。
 
+没有 Python 的电脑：下载 GitHub Release 里的 `Melvo2CN.exe`，双击选 `[1]` 打补丁或 `[2]` 还原。不需要安装 Python / Node。必须从 Steam 启动游戏。
+
 ---
 
 ## 1. 使用场景

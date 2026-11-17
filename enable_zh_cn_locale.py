@@ -303,14 +303,89 @@ def patch_user_settings(path, locale, dry_run):
 # Main
 # ---------------------------------------------------------------------------
 
-def default_game_dir():
-    here = os.path.abspath(os.path.dirname(__file__))
-    parent = os.path.dirname(here)
-    if os.path.isfile(os.path.join(parent, "Melvor2.exe")):
-        return parent
-    return os.path.abspath(
-        r"C:\SteamLibrary\steamapps\common\Melvor Idle 2"
+def _steam_install_roots():
+    roots = []
+    try:
+        import winreg
+
+        pairs = (
+            (winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam", "InstallPath"),
+        )
+        for hive, sub, name in pairs:
+            try:
+                key = winreg.OpenKey(hive, sub)
+                val, _ = winreg.QueryValueEx(key, name)
+                if val:
+                    roots.append(val)
+            except OSError:
+                pass
+    except ImportError:
+        pass
+    roots.extend(
+        [
+            r"C:\Program Files (x86)\Steam",
+            r"C:\Program Files\Steam",
+            r"C:\SteamLibrary",
+            r"D:\SteamLibrary",
+            r"E:\SteamLibrary",
+        ]
     )
+    out = []
+    seen = set()
+    for r in roots:
+        n = os.path.normpath(os.path.expandvars(r))
+        k = n.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(n)
+    return out
+
+
+def _steam_library_folders(steam_root):
+    yield steam_root
+    vdf = os.path.join(steam_root, "steamapps", "libraryfolders.vdf")
+    if not os.path.isfile(vdf):
+        vdf = os.path.join(steam_root, "libraryfolders.vdf")
+    if not os.path.isfile(vdf):
+        return
+    try:
+        text = open(vdf, "r", encoding="utf-8", errors="replace").read()
+    except OSError:
+        return
+    import re
+
+    for m in re.finditer(r'"path"\s+"([^"]+)"', text):
+        yield m.group(1).replace("\\\\", "\\")
+
+
+def find_melvor2_dir():
+    """Locate the folder that contains Melvor2.exe (Steam libraries, then fallbacks)."""
+    candidates = []
+    here = os.path.abspath(os.path.dirname(__file__))
+    if getattr(sys, "frozen", False):
+        here = os.path.abspath(os.path.dirname(sys.executable))
+    candidates.append(here)
+    candidates.append(os.path.dirname(here))
+    for steam in _steam_install_roots():
+        for lib in _steam_library_folders(steam):
+            candidates.append(os.path.join(lib, "steamapps", "common", "Melvor Idle 2"))
+            candidates.append(os.path.join(lib, "common", "Melvor Idle 2"))
+    candidates.append(r"C:\SteamLibrary\steamapps\common\Melvor Idle 2")
+    seen = set()
+    for c in candidates:
+        n = os.path.normpath(c)
+        if n.lower() in seen:
+            continue
+        seen.add(n.lower())
+        if os.path.isfile(os.path.join(n, "Melvor2.exe")):
+            return n
+    return os.path.abspath(r"C:\SteamLibrary\steamapps\common\Melvor Idle 2")
+
+
+def default_game_dir():
+    return find_melvor2_dir()
 
 
 def default_user_dir():

@@ -64,8 +64,23 @@ def eprint(*args):
     print(*args, file=sys.stderr)
 
 
+def bundle_dir():
+    """Read-only files packed into the one-click exe (PyInstaller _MEIPASS)."""
+    if getattr(sys, "frozen", False):
+        return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    return os.path.abspath(os.path.dirname(__file__))
+
+
 def backup_dir():
+    """Writable backup folder. Frozen builds use %%APPDATA%%\\melvo2_cn\\backups."""
+    if getattr(sys, "frozen", False):
+        appdata = os.environ.get("APPDATA") or os.path.dirname(sys.executable)
+        return os.path.join(appdata, "melvo2_cn", "backups")
     return os.path.join(os.path.abspath(os.path.dirname(__file__)), "backups")
+
+
+def bundled_backup_dir():
+    return os.path.join(bundle_dir(), "backups")
 
 
 def find_project_binary(f, header):
@@ -167,14 +182,23 @@ def save_backup(meta, blob):
 
 
 def load_backup():
-    blob_path = os.path.join(backup_dir(), "project.binary.bak")
-    meta_path = os.path.join(backup_dir(), "project.binary.dirmeta.json")
-    if not os.path.isfile(blob_path) or not os.path.isfile(meta_path):
-        raise RuntimeError("no backup at %s" % backup_dir())
-    blob = open(blob_path, "rb").read()
-    meta = json.load(open(meta_path, encoding="utf-8"))
-    meta["md5"] = bytes.fromhex(meta["md5_hex"])
-    return blob, meta
+    pairs = [
+        (
+            os.path.join(backup_dir(), "project.binary.bak"),
+            os.path.join(backup_dir(), "project.binary.dirmeta.json"),
+        ),
+        (
+            os.path.join(bundled_backup_dir(), "project.binary.bak"),
+            os.path.join(bundled_backup_dir(), "project.binary.dirmeta.json"),
+        ),
+    ]
+    for blob_path, meta_path in pairs:
+        if os.path.isfile(blob_path) and os.path.isfile(meta_path):
+            blob = open(blob_path, "rb").read()
+            meta = json.load(open(meta_path, encoding="utf-8"))
+            meta["md5"] = bytes.fromhex(meta["md5_hex"])
+            return blob, meta
+    raise RuntimeError("no backup at %s (or bundled copy)" % backup_dir())
 
 
 def patch_replace(blob, info):
@@ -219,7 +243,7 @@ def write_dir_size_md5(exe, entry, new_size, new_md5):
 
 def parse_args():
     p = argparse.ArgumentParser(description="Scheme B: patch project.binary translations")
-    p.add_argument("--game-dir", default=default_game_dir())
+    p.add_argument("--game-dir", default=None)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument(
         "--add",
@@ -236,20 +260,15 @@ def parse_args():
     return p.parse_args()
 
 
-def main():
-    args = parse_args()
-    if args.add and args.replace:
-        eprint("ERROR: use only one of --add / --replace")
-        return 1
-    mode = "add" if args.add else "replace"
-
-    exe = os.path.join(os.path.abspath(args.game_dir), "Melvor2.exe")
+def run_patch(game_dir, revert=False, mode="replace", dry_run=False, force=False):
+    """Apply or revert the project.binary translation patch. Return process exit code."""
+    exe = os.path.join(os.path.abspath(game_dir), "Melvor2.exe")
     print("Exe :", exe)
-    print("Mode:", "revert" if args.revert else mode)
+    print("Mode:", "revert" if revert else mode)
     if not os.path.isfile(exe):
         eprint("ERROR: Melvor2.exe not found")
         return 1
-    if is_process_running("Melvor2.exe") and not args.force:
+    if is_process_running("Melvor2.exe") and not force:
         eprint("ERROR: Melvor2.exe is running. Close it, or pass --force.")
         return 1
 
@@ -267,10 +286,10 @@ def main():
     slack = header["dir_rel"] - (entry["offset"] + entry["size"])
     print("Slack before directory:", slack)
 
-    if args.revert:
+    if revert:
         blob, meta = load_backup()
         print("Restoring %d bytes from backup (sha256 %s)" % (len(blob), meta["blob_sha256"]))
-        if args.dry_run:
+        if dry_run:
             print("dry-run: skip write")
             return 0
         write_abs(exe, abs_off, blob)
@@ -304,7 +323,7 @@ def main():
     if not changed:
         print("Nothing to do.")
         return 0
-    if args.dry_run:
+    if dry_run:
         print("dry-run: skip write. Backup would go to", backup_dir())
         return 0
 
@@ -335,8 +354,24 @@ def main():
     )
     print("")
     print("Launch the game FROM STEAM (not Melvor2.exe).")
-    print("If Steam/license error: python patch_pck_translations.py --revert")
+    print("If Steam/license error: run this tool again and choose Revert.")
     return 0
+
+
+def main(argv=None):
+    args = parse_args() if argv is None else parse_args()
+    if args.add and args.replace:
+        eprint("ERROR: use only one of --add / --replace")
+        return 1
+    mode = "add" if args.add else "replace"
+    game_dir = args.game_dir or default_game_dir()
+    return run_patch(
+        game_dir,
+        revert=args.revert,
+        mode=mode,
+        dry_run=args.dry_run,
+        force=args.force,
+    )
 
 
 if __name__ == "__main__":
