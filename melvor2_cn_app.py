@@ -3,8 +3,8 @@
 """
 One-click launcher for Scheme B. No Python/Node required after PyInstaller build.
 
-Double-click Melvo2CN.exe, pick Apply or Revert. Finds Melvor2.exe via Steam
-libraries. Bundles the stock project.binary backup for revert.
+Double-click Melvor2CN.exe, pick Apply or Revert. Finds Melvor2.exe via Steam
+libraries. Revert swaps zh_CN.po back to en_GB.po in place.
 """
 
 from __future__ import print_function
@@ -39,7 +39,7 @@ def pause():
 
 def print_banner(game_dir):
     print("=" * 60)
-    print("  Melvo2CN  -  Melvor Idle 2  Simplified Chinese patch")
+    print("  Melvor2CN  -  Melvor Idle 2  Simplified Chinese patch")
     print("  Scheme B: project.binary  internationalization/locale/translations")
     print("=" * 60)
     print("Game dir:", game_dir)
@@ -47,7 +47,7 @@ def print_banner(game_dir):
     print("Melvor2.exe:", "OK" if os.path.isfile(exe) else "NOT FOUND")
     print("")
     print("  [1] Apply Chinese patch  (en_GB.po -> zh_CN.po)")
-    print("  [2] Revert to English    (restore project.binary.bak)")
+    print("  [2] Revert to English    (zh_CN.po -> en_GB.po)")
     print("  [3] Exit")
     print("")
     print("Always launch the game FROM STEAM after patching.")
@@ -108,6 +108,6 @@ if __name__ == "__main__":
     except Exception as ex:
         print("ERROR:", ex)
         code = 1
-    if getattr(sys, "frozen", False) or os.environ.get("MELVO2CN_PAUSE"):
+    if getattr(sys, "frozen", False) or os.environ.get("MELVOR2CN_PAUSE"):
         pause()
     sys.exit(code)

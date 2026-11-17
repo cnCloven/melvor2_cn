@@ -3,8 +3,8 @@
 """
 Scheme B: register Locale/zh_CN.po inside the embedded PCK's project.binary.
 
-Unlike Scheme A (override.cfg), this edits Melvor2.exe. Always keep a backup
-under tools/backups/ and pass --revert to restore.
+Unlike Scheme A (override.cfg), this edits Melvor2.exe.
+--revert swaps zh_CN.po back to en_GB.po in place (no game-file backup in the repo).
 
 Two patch modes
 ---------------
@@ -72,10 +72,10 @@ def bundle_dir():
 
 
 def backup_dir():
-    """Writable backup folder. Frozen builds use %%APPDATA%%\\melvo2_cn\\backups."""
+    """Writable backup folder. Frozen builds use %%APPDATA%%\\melvor2_cn\\backups."""
     if getattr(sys, "frozen", False):
         appdata = os.environ.get("APPDATA") or os.path.dirname(sys.executable)
-        return os.path.join(appdata, "melvo2_cn", "backups")
+        return os.path.join(appdata, "melvor2_cn", "backups")
     return os.path.join(os.path.abspath(os.path.dirname(__file__)), "backups")
 
 
@@ -201,14 +201,14 @@ def load_backup():
     raise RuntimeError("no backup at %s (or bundled copy)" % backup_dir())
 
 
-def patch_replace(blob, info):
-    if info["first"] != EN_PATH:
-        if info["first"] == ZH_PATH:
-            return blob, False, "already replaced with zh_CN.po"
-        raise RuntimeError("first translation path is %r, not en_GB.po" % info["first"])
+def patch_replace(blob, info, target=ZH_PATH, already=EN_PATH, label="zh_CN.po"):
+    if info["first"] == target:
+        return blob, False, "already %s" % label
+    if info["first"] != already:
+        raise RuntimeError("first translation path is %r, expected %r" % (info["first"], already))
     out = bytearray(blob)
-    out[info["str_off"] : info["str_off"] + len(ZH_PATH)] = ZH_PATH
-    return bytes(out), True, "replaced en_GB.po with zh_CN.po (in-place)"
+    out[info["str_off"] : info["str_off"] + len(target)] = target
+    return bytes(out), True, "replaced with %s (in-place)" % label
 
 
 def patch_add(blob, info):
@@ -287,15 +287,21 @@ def run_patch(game_dir, revert=False, mode="replace", dry_run=False, force=False
     print("Slack before directory:", slack)
 
     if revert:
-        blob, meta = load_backup()
-        print("Restoring %d bytes from backup (sha256 %s)" % (len(blob), meta["blob_sha256"]))
+        blob = read_abs(exe, abs_off, entry["size"])
+        info = parse_translations_field(blob)
+        new_blob, changed, msg = patch_replace(
+            blob, info, target=EN_PATH, already=ZH_PATH, label="en_GB.po"
+        )
+        print("Revert:", msg, "changed=", changed)
+        if not changed:
+            print("Nothing to do.")
+            return 0
         if dry_run:
             print("dry-run: skip write")
             return 0
-        write_abs(exe, abs_off, blob)
-        # if we previously grew the file, also restore size; extra slack bytes can stay
-        write_dir_size_md5(exe, entry, meta["size"], meta["md5"])
-        print("Reverted. Launch from Steam.")
+        write_abs(exe, abs_off, new_blob)
+        write_dir_size_md5(exe, entry, len(new_blob), hashlib.md5(new_blob).digest())
+        print("Reverted to en_GB.po. Launch from Steam.")
         return 0
 
     blob = read_abs(exe, abs_off, entry["size"])
